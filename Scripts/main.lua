@@ -3,6 +3,7 @@ local UEHelpers = require("UEHelpers")
 ---@diagnostic disable-next-line: assign-type-mismatch
 local AstroPlayStatics = StaticFindObject("/Script/Astro.Default__AstroPlayStatics") ---@type UAstroPlayStatics
 
+---@type EDeformType
 local EDeformType = {
     Subtract = 0,
     Add = 1,
@@ -20,6 +21,38 @@ local EDeformType = {
     EDeformType_MAX = 13,
 }
 
+---@type EAstroGameMenuTutorialSlideDeckKey
+local EAstroGameMenuTutorialSlideDeckKey = {
+    Invalid = 0,
+    Power = 1,
+    SoilExcavation = 2,
+    Research = 3,
+    Printers = 4,
+    BaseBuilding = 5,
+    CreativeMode = 6,
+    QHAll = 7,
+    QHPlanets = 8,
+    QHResources = 9,
+    Automation = 10,
+    Missions = 11,
+    AdventurePopup = 12,
+    Flora = 13,
+    Rails = 14,
+    Expansion = 15,
+    GW_Tutorial = 16,
+    EAstroGameMenuTutorialSlideDeckKey_MAX = 17,
+}
+
+---@type ESlateVisibility
+local ESlateVisibility = {
+    Visible = 0,
+    Collapsed = 1,
+    Hidden = 2,
+    HitTestInvisible = 3,
+    SelfHitTestInvisible = 4,
+    ESlateVisibility_MAX = 5,
+}
+
 ---@class Debug
 ---@field staticMeshActorClassShortName string
 ---@field staticMeshActorClassName string
@@ -35,6 +68,11 @@ local debug = {
     material2 = nil,
     mesh = nil,
     scale = { X = 0.1, Y = 0.1, Z = 0.1 }
+}
+
+local AstropediaWidget = {
+    Planet = CreateInvalidObject(),
+    Resources = CreateInvalidObject()
 }
 
 function FVector(x, y, z)
@@ -179,6 +217,7 @@ end)
 
 --#region CameraSpaceDrivingRig
 
+-- Set a pitch limit for the driving camera.
 ---@param self ACameraSpaceDrivingRig_C
 ---@diagnostic disable-next-line: redundant-parameter
 NotifyOnNewObject("/Game/Camera/CameraSpaceDrivingRig.CameraSpaceDrivingRig_C", function(self)
@@ -220,13 +259,13 @@ ExecuteWithDelay(5000, function()
 end)
 
 -- Keybind to turn on/off the character torch (light).
-RegisterKeyBind(Key.L, {}, function()
+RegisterKeyBind(Key.T, { ModifierKey.SHIFT }, function()
     local astroChar = AstroPlayStatics:GetLocalAstroCharacter(UEHelpers:GetWorld())
     astroChar.bIsLightsOn = not astroChar.bIsLightsOn
 end)
 
 -- Keybind to flip the rover when it is flipped. No need to wait for the tooltip to be displayed.
-RegisterKeyBind(Key.FOUR, { ModifierKey.SHIFT }, function()
+RegisterKeyBind(Key.R, { ModifierKey.SHIFT }, function()
     local pc = AstroPlayStatics:GetLocalPlayController(UEHelpers:GetWorldContextObject())
     local vehicle = pc.ControlledVehicle
     if vehicle:IsA("/Game/Vehicles/Rover_Base.Rover_Base_C") then ---@cast vehicle ARover_Base_C
@@ -262,13 +301,14 @@ end)
 --         )
 --     end)
 
-RegisterKeyBind(Key.R, { ModifierKey.SHIFT }, function()
+-- Keybind to revert the deformation.
+RegisterKeyBind(Key.R, { ModifierKey.CONTROL, ModifierKey.SHIFT }, function()
     local pc = AstroPlayStatics:GetLocalPlayController(UEHelpers:GetWorld())
     local loc = pc:GetAstroCharacter():K2_GetActorLocation()
     local norm = math.sqrt(loc.X ^ 2 + loc.Y ^ 2 + loc.Z ^ 2)
     local normal = { X = loc.X / norm, Y = loc.Y / norm, Z = loc.Z / norm }
 
-    local sphereSize = 5000
+    local sphereSize = 2000
 
     pc:ClientDoDeformation(
         {
@@ -311,6 +351,46 @@ RegisterKeyBind(Key.R, { ModifierKey.SHIFT }, function()
     end)
 end)
 --#endregion
+
+-- Keybind to open the Astropedia with the planets tab.
+RegisterKeyBind(Key.J, {}, function()
+    local astroHUD = FindFirstOf("AstroHUD") ---@cast astroHUD AAstroHUD
+
+    if not astroHUD:IsValid() then
+        return
+    end
+
+    if not AstropediaWidget.Planet:IsValid() then
+        AstropediaWidget.Planet = astroHUD:CreateAstropediaWidget(EAstroGameMenuTutorialSlideDeckKey.QHPlanets, 0)
+        return
+    end
+
+    if AstropediaWidget.Planet:IsInViewport() == true then
+        AstropediaWidget.Planet:RemoveFromViewport()
+    else
+        AstropediaWidget.Planet:AddToViewport(0)
+    end
+end)
+
+-- Keybind to open the Astropedia with the resources tab.
+RegisterKeyBind(Key.H, {}, function()
+    local astroHUD = FindFirstOf("AstroHUD") ---@cast astroHUD AAstroHUD
+
+    if not astroHUD:IsValid() then
+        return
+    end
+
+    if not AstropediaWidget.Resources:IsValid() then
+        AstropediaWidget.Resources = astroHUD:CreateAstropediaWidget(EAstroGameMenuTutorialSlideDeckKey.QHResources, 0)
+        return
+    end
+
+    if AstropediaWidget.Resources:IsInViewport() == true then
+        AstropediaWidget.Resources:RemoveFromViewport()
+    else
+        AstropediaWidget.Resources:AddToViewport(0)
+    end
+end)
 
 -- Keybind to toggle the game pause.
 RegisterKeyBind(Key.PAUSE, function()
