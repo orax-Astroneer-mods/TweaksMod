@@ -312,6 +312,14 @@ RegisterKeyBind(Key.R, { ModifierKey.SHIFT }, function()
 end)
 --#endregion
 
+-- Keybind to toggle the game pause.
+RegisterKeyBind(Key.PAUSE, function()
+    local gameplayStatics = UEHelpers.GetGameplayStatics()
+    local world = UEHelpers.GetWorld()
+
+    gameplayStatics:SetGamePaused(world, not gameplayStatics:IsGamePaused(world) and true or false)
+end)
+
 init()
 local dbgObjectsInst = FindAllOf(debug.staticMeshActorClassShortName) ---@type AActor[]?
 if dbgObjectsInst then
