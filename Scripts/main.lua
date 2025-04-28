@@ -1,5 +1,8 @@
 local UEHelpers = require("UEHelpers")
 
+---@class FOutputDevice
+---@field Log function
+
 ---@diagnostic disable-next-line: assign-type-mismatch
 local AstroPlayStatics = StaticFindObject("/Script/Astro.Default__AstroPlayStatics") ---@type UAstroPlayStatics
 
@@ -70,8 +73,12 @@ local debug = {
     scale = { X = 0.1, Y = 0.1, Z = 0.1 }
 }
 
+local IsAutoWalkEnabled = false
+local MaxSpeed = nil
+local IsFirstInit = true
 local FpsLimit = nil
 local FrameRateLimit = nil
+
 local AstropediaWidget = {
     Planet = CreateInvalidObject(),
     Resources = CreateInvalidObject()
@@ -211,11 +218,148 @@ local function init(self, NewPawn)
     pc.MouseZoomTickSize = 0.2
 end
 
+---@return string?
+local function getMoveForwardKey()
+    local AstroGameUserSettings = FindFirstOf("AstroGameUserSettings")
+
+    if AstroGameUserSettings:IsValid() then ---@cast AstroGameUserSettings UAstroGameUserSettings
+        local inputAxisKeyMapping = AstroGameUserSettings:GetInputAxisMappingKeys(FName("MoveForward"), 1.0, false, false)
+
+        if #inputAxisKeyMapping > 0 then
+            ---@diagnostic disable-next-line: undefined-field
+            local mapping = inputAxisKeyMapping[1]:get() ---@type FInputAxisKeyMapping
+
+            return mapping.Key.KeyName:ToString()
+        end
+    end
+end
+
+---@param stopWalkKeys FName[]
+---@param maxSpeed float
+local function autoWalk(stopWalkKeys, maxSpeed)
+    local delay = 20
+    local iterations = 20
+
+    local playerController = UEHelpers:GetPlayerController()
+    if playerController == nil or not playerController:IsValid() then
+        IsAutoWalkEnabled = false
+        return
+    end
+
+    local designAstro = AstroPlayStatics:GetLocalAstroCharacter(UEHelpers:GetWorld())
+    if not designAstro:IsValid() then
+        IsAutoWalkEnabled = false
+        return
+    end ---@cast designAstro ADesignAstro_C
+
+    local movementComponent = designAstro.AstroMovementComponent
+    if not movementComponent:IsValid() then
+        IsAutoWalkEnabled = false
+        return
+    end
+
+    IsAutoWalkEnabled = not IsAutoWalkEnabled
+
+    if MaxSpeed == nil then
+        -- default: 850.0
+        MaxSpeed = movementComponent.MaxSpeed
+    end
+
+    if IsAutoWalkEnabled then
+        if maxSpeed then
+            movementComponent.MaxSpeed = maxSpeed
+        end
+    else
+        movementComponent.MaxSpeed = MaxSpeed
+    end
+
+    if IsAutoWalkEnabled then
+        local i = 0
+
+        LoopAsync(delay, function()
+            if not movementComponent:IsValid() then
+                IsAutoWalkEnabled = false
+                -- restore MaxSpeed
+                movementComponent.MaxSpeed = MaxSpeed
+                return true
+            end
+
+            for _, key in ipairs(stopWalkKeys) do
+                if playerController:IsInputKeyDown({ KeyName = key }) and i >= iterations then
+                    IsAutoWalkEnabled = false
+                    -- restore MaxSpeed
+                    movementComponent.MaxSpeed = MaxSpeed
+                    return true
+                end
+            end
+
+            local fw = designAstro:GetActorForwardVector()
+            designAstro:AddMovementInput({ X = fw.X, Y = fw.Y, Z = fw.Z }, 1, false)
+
+            if i < iterations then
+                i = i + 1
+            end
+
+            if IsAutoWalkEnabled == false then
+                -- restore MaxSpeed
+                movementComponent.MaxSpeed = MaxSpeed
+                return true
+            end
+
+            return false
+        end)
+    end
+end
+
+local function getKeyNameByValue(keyValue)
+    for k, v in pairs(Key) do
+        if keyValue == v then
+            return k
+        end
+    end
+end
+
+local function registerAutoWalkKeyBinds(moveForwardKey)
+    local designAstro = UEHelpers:GetPlayer()
+    if not designAstro:IsValid() then
+        print("ERROR: ADesignAstro_C not found.")
+        return
+    end ---@cast designAstro ADesignAstro_C
+
+    local enabledAutoWalk = true
+    local speed = 850 -- 850
+
+    -- Auto walk
+    if enabledAutoWalk then
+        local key = Key.Z
+        if moveForwardKey == "Z" then
+            key = Key.W
+        end
+        RegisterKeyBind(key, {}, function()
+            autoWalk({
+                FName("F"),
+                FName("S"),
+                FName("W"),
+                FName("Z"),
+            }, speed)
+        end)
+    end
+end
+
 -- Activate a light under the Terrain Tool.
 RegisterHook("/Script/Astro.PlayController:IsTerrainBrushLightActive", function(self, ...)
     ---@diagnostic disable-next-line: redundant-return-value
     return true
 end)
+
+RegisterHook("/Script/Engine.PlayerController:ClientReceiveLocalizedMessage",
+    function(...)
+        if IsFirstInit then
+            IsFirstInit = false
+
+            registerAutoWalkKeyBinds(getMoveForwardKey())
+        end
+    end)
 
 --#region CameraSpaceDrivingRig
 
@@ -303,57 +447,6 @@ end)
 --         )
 --     end)
 
--- Keybind to revert the deformation.
-RegisterKeyBind(Key.R, { ModifierKey.CONTROL, ModifierKey.SHIFT }, function()
-    local pc = AstroPlayStatics:GetLocalPlayController(UEHelpers:GetWorld())
-    local loc = pc:GetAstroCharacter():K2_GetActorLocation()
-    local norm = math.sqrt(loc.X ^ 2 + loc.Y ^ 2 + loc.Z ^ 2)
-    local normal = { X = loc.X / norm, Y = loc.Y / norm, Z = loc.Z / norm }
-
-    local sphereSize = 2000
-
-    pc:ClientDoDeformation(
-        {
-            AutoCreateResourceEfficiency = 0,
-            CreativeModeNoResourceCollection = false,
-            DeltaTime = 0.03299999982118, -- ???
-            ForceRemoveDecorators = false,
-            HardnessPenetration = 10,
-            Instigator = nil,
-            Intensity = 5, -- minus 1 to do progressive restoration
-            Location = { X = loc.X, Y = loc.Y, Z = loc.Z },
-            MaterialIndex = -1,
-            Normal = { X = normal.X, Y = normal.Y, Z = normal.Z },
-            Operation = EDeformType.RevertModifications,
-            Scale = sphereSize, -- distance, radius
-            SequenceNumber = 0,
-            Shape = 0,
-            bEasyUnbury = false,
-            bUseAlternatePolygonization = true
-        })
-
-    local dbgObjectsInst = FindAllOf(debug.staticMeshActorClassShortName) ---@type AActor[]?
-    if dbgObjectsInst then
-        for _, value in ipairs(dbgObjectsInst) do
-            value:K2_DestroyActor()
-        end
-    end
-
-    local obj = spawnDebugObject(UEHelpers:GetWorld(), debug.staticMeshActorClass, debug.mesh, debug.material, loc, nil,
-        { X = sphereSize, Y = sphereSize, Z = sphereSize },
-        { R = 0, G = 1, B = 0, A = 1 })
-    local obj2 = spawnDebugObject(UEHelpers:GetWorld(), debug.staticMeshActorClass, debug.mesh, debug.material2, loc, nil,
-        { X = sphereSize, Y = sphereSize, Z = sphereSize },
-        { R = 0, G = 1, B = 0, A = 0.05 })
-
-    -- destroy the debug object (sphere) after n seconds
-    ExecuteWithDelay(30000, function()
-        if obj:IsValid() then obj:K2_DestroyActor() end
-        if obj2:IsValid() then obj2:K2_DestroyActor() end
-    end)
-end)
---#endregion
-
 -- Keybind to open the Astropedia with the planets tab.
 RegisterKeyBind(Key.J, {}, function()
     local astroHUD = FindFirstOf("AstroHUD") ---@cast astroHUD AAstroHUD
@@ -424,6 +517,13 @@ RegisterKeyBind(Key.PAUSE, function()
         end
     end
 end)
+
+do
+    local key = getMoveForwardKey()
+    if key ~= nil and key ~= "" and key ~= "None" then
+        registerAutoWalkKeyBinds(key)
+    end
+end
 
 init()
 local dbgObjectsInst = FindAllOf(debug.staticMeshActorClassShortName) ---@type AActor[]?
