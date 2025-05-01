@@ -76,8 +76,6 @@ local debug = {
 local IsAutoWalkEnabled = false
 local MaxSpeed = nil
 local IsFirstInit = true
-local FpsLimit = nil
-local FrameRateLimit = nil
 
 local AstropediaWidget = {
     Planet = CreateInvalidObject(),
@@ -484,37 +482,6 @@ RegisterKeyBind(Key.H, {}, function()
         AstropediaWidget.Resources:RemoveFromViewport()
     else
         AstropediaWidget.Resources:AddToViewport(0)
-    end
-end)
-
--- Keybind to toggle the game pause.
-RegisterKeyBind(Key.PAUSE, function()
-    local limit = 1
-    local gameplayStatics = UEHelpers.GetGameplayStatics()
-    local world = UEHelpers.GetWorld()
-
-    local isPaused = not gameplayStatics:IsGamePaused(world)
-
-    gameplayStatics:SetGamePaused(world, isPaused)
-
-    local AstroGameUserSettings = FindFirstOf("AstroGameUserSettings")
-    if AstroGameUserSettings:IsValid() then ---@cast AstroGameUserSettings UAstroGameUserSettings
-        if FpsLimit == nil then
-            FpsLimit = AstroGameUserSettings:GetFpsLimit()
-        end
-        if FrameRateLimit == nil then
-            FrameRateLimit = AstroGameUserSettings:GetFrameRateLimit()
-        end
-
-        if isPaused then
-            AstroGameUserSettings:SetFpsLimit(limit)
-            AstroGameUserSettings:SetFrameRateLimit(limit)
-            AstroGameUserSettings:ApplySettings(false)
-        else
-            AstroGameUserSettings:SetFpsLimit(FpsLimit)
-            AstroGameUserSettings:SetFrameRateLimit(FrameRateLimit)
-            AstroGameUserSettings:ApplySettings(false)
-        end
     end
 end)
 
